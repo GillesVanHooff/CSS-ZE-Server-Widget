@@ -9,7 +9,6 @@ from pathlib import Path
 import a2s
 
 TIMEOUT = 3.0
-FAKE_EVENT = False  # set by the --fake-event flag, to test the event look without a real event
 
 # servers.json sits next to the .exe when packaged, next to this file otherwise.
 BASE_DIR = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).parent
@@ -71,9 +70,6 @@ def query_server(server):
     except (OSError, a2s.BrokenMessageError):  # timeouts are OSError too
         return status
 
-    server_name = info.server_name
-    if FAKE_EVENT:
-        server_name += " | FAKE EVENT"
     status.update(
         online=True,
         map=info.map_name,
@@ -81,10 +77,10 @@ def query_server(server):
         max_players=info.max_players,
         ping_ms=round(info.ping * 1000),
         # Checked on the live name, so it works even when servers.json overrides the name.
-        event="EVENT" in server_name,
+        event="EVENT" in info.server_name,
     )
     if not server.get("name"):
-        status["name"] = server_name.strip(" |")
+        status["name"] = info.server_name.strip(" |")
     return status
 
 
@@ -117,6 +113,5 @@ def format_status(s, bold=False):
 
 
 if __name__ == "__main__":
-    FAKE_EVENT = "--fake-event" in sys.argv
     for s in query_all(load_servers()):
         print(format_status(s))
