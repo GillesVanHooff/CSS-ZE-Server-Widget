@@ -90,6 +90,10 @@ def _connect(address):
     return lambda: os.startfile(f"steam://connect/{address}")
 
 
+def _open_server_browser():
+    os.startfile("steam://open/servers")
+
+
 def _open_servers_file():
     # Notepad rather than os.startfile: a fresh Windows has no app set for .json files.
     subprocess.Popen(["notepad.exe", str(SERVERS_FILE)])
@@ -131,6 +135,7 @@ class TrayApp:
                 yield pystray.MenuItem(f"★ {text}" if s["address"] == preferred else text,
                                        _connect(s["address"]), enabled=s["online"])
         yield pystray.Menu.SEPARATOR
+        yield pystray.MenuItem("Steam server browser", _open_server_browser)
         yield pystray.MenuItem("Add server…", self._dialog(self._ask_server))
         yield pystray.MenuItem("Add server from clipboard", self._dialog(self._add_from_clipboard))
         yield pystray.MenuItem("Remove server", pystray.Menu(self._remove_items), enabled=bool(self.servers))
