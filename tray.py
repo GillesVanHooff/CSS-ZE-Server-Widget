@@ -9,6 +9,7 @@ import pystray
 from PIL import Image, ImageDraw, ImageFont
 from pystray._util import win32  # private pystray API: keep pystray pinned in requirements.txt
 
+import startup
 from dialogs import MB_ICONERROR, ask_server, confirm, message, read_clipboard
 from query import address, bold_digits, format_status, parse_address, query_all, save_servers, totals
 
@@ -32,17 +33,17 @@ def _font(size):
         return ImageFont.load_default(size)
 
 
-def _draw_fitted(draw, text, max_size):
-    """Draw text as large as fits in a max_size square, centered on its actual ink."""
-    size = max_size * 2
-    while size > 8:
+def _draw_fitted(draw, text, box_w, box_h, center):
+    """Draw text as large as fits in a box_w x box_h box, centered on its actual ink at center."""
+    size = int(box_h * 2)
+    while size > 4:
         font = _font(size)
         left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
-        if right - left <= max_size and bottom - top <= max_size:
+        if right - left <= box_w and bottom - top <= box_h:
             break
         size -= 1
-    draw.text((ICON_SIZE / 2 - (left + right) / 2, ICON_SIZE / 2 - (top + bottom) / 2),
-              text, font=font, fill=TEXT)
+    cx, cy = center
+    draw.text((cx - (left + right) / 2, cy - (top + bottom) / 2), text, font=font, fill=TEXT)
 
 
 def make_icon(players=None, event=False):
@@ -52,7 +53,25 @@ def make_icon(players=None, event=False):
     draw = ImageDraw.Draw(img)
     draw.rounded_rectangle((0, 0, ICON_SIZE - 1, ICON_SIZE - 1), radius=8,
                            fill=EVENT_BG if event else ONLINE_BG if online else OFFLINE_BG)
-    _draw_fitted(draw, str(players) if online else "–", ICON_SIZE - 6)
+    _draw_fitted(draw, str(players) if online else "–", ICON_SIZE - 6, ICON_SIZE - 6, (ICON_SIZE / 2, ICON_SIZE / 2))
+    return img
+
+
+SUBTITLE_MIN_SIZE = 64  # below this "player count" is an unreadable smudge, so only "ZE" is drawn
+
+
+def make_app_icon(size):
+    """The app's own icon (.exe, dialogs): "ZE" over "player count", in the tray icon's green."""
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    draw.rounded_rectangle((0, 0, size - 1, size - 1), radius=max(size // 8, 2), fill=ONLINE_BG)
+    pad = max(size // 12, 1)
+    inner = size - 2 * pad
+    if size < SUBTITLE_MIN_SIZE:
+        _draw_fitted(draw, "ZE", inner, inner * 0.7, (size / 2, size / 2))
+    else:
+        _draw_fitted(draw, "ZE", inner, inner * 0.55, (size / 2, pad + inner * 0.36))
+        _draw_fitted(draw, "player count", inner, inner * 0.14, (size / 2, pad + inner * 0.84))
     return img
 
 
@@ -97,6 +116,8 @@ class TrayApp:
         yield pystray.MenuItem("Add server…", self._dialog(self._ask_server))
         yield pystray.MenuItem("Add server from clipboard", self._dialog(self._add_from_clipboard))
         yield pystray.MenuItem("Remove server", pystray.Menu(self._remove_items), enabled=bool(self.servers))
+        yield pystray.Menu.SEPARATOR
+        yield pystray.MenuItem("Start with Windows", self._toggle_startup, checked=lambda _item: startup.is_enabled())
         yield pystray.MenuItem("Refresh now", self._wake.set)
         yield pystray.MenuItem("Quit", self._quit)
 
@@ -132,7 +153,14 @@ class TrayApp:
             initial = address(parse_address(read_clipboard()))
         except ValueError:
             initial = ""
-        ask_server(lambda text, name: self._add(parse_address(text, name)), initial)
+        ask_server(lambda text, name: self._add(parse_address(text, name)), initial,
+                   icons=[make_app_icon(s) for s in (16, 32, 48)])
+
+    def _toggle_startup(self):
+        try:
+            startup.set_enabled(not startup.is_enabled())
+        except OSError as e:
+            self._dialog(partial(message, f"Could not change Start with Windows:\n\n{e}", MB_ICONERROR))()
 
     def _add_from_clipboard(self):
         try:

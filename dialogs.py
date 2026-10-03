@@ -8,6 +8,8 @@ import ctypes
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+from PIL import ImageTk
+
 APP_TITLE = "CSS ZE widget"
 MB_YESNO = 0x4
 MB_ICONERROR = 0x10
@@ -55,13 +57,16 @@ def _placeholder(entry, text):
     update(entry.get())
 
 
-def ask_server(on_add, address=""):
+def ask_server(on_add, address="", icons=()):
     """Show the Add server dialog. on_add(address_text, name) adds the server or raises ValueError,
-    which is shown to the user and keeps the dialog open."""
+    which is shown to the user and keeps the dialog open. icons: PIL images for the window icon, one per size."""
     root = tk.Tk()
     root.title("Add server")
     root.resizable(False, False)
     root.attributes("-topmost", True)  # opened from the tray, so nothing else would bring it to the front
+    photos = [ImageTk.PhotoImage(icon, master=root) for icon in icons]  # kept alive until the dialog closes
+    if photos:
+        root.iconphoto(False, *photos)
 
     frame = ttk.Frame(root, padding=12)
     frame.grid()

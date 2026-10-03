@@ -6,7 +6,7 @@ A lightweight Windows system tray widget for CSS: ZE servers.
 - Click a server to join it. CSS launches through Steam if it isn't already running.
 - Servers that are down stay in the list as offline and come back on their own.
 
-> **Status:** the tray app works. Packaging as an `.exe` isn't done yet.
+> **Status:** the tray app and the `.exe` build work.
 
 ## Requirements
 
@@ -27,6 +27,22 @@ online servers. Hover over it to see players and capacity, for example `44/104`.
 
 To check the servers without the tray, run `.venv\Scripts\python.exe query.py`.
 
+## Build the .exe
+
+```powershell
+powershell -ExecutionPolicy Bypass -File build.ps1
+```
+
+This installs PyInstaller into the venv, draws the icon (`make_ico.py`) and writes
+`dist\CSS-ZE-Widget.exe`. That one file is all you need. Put it in a folder you can write to, not
+Program Files: on first run it creates `servers.json` next to itself, with UNLOZE ZE in it.
+
+Unsigned single-file builds sometimes set off antivirus false positives.
+
+To start the widget when you log in, tick **Start with Windows** in the tray menu. It adds the `.exe`'s
+current location to your user's startup list. If you move the `.exe`, the item shows as unticked: tick it
+again.
+
 ## Configuration
 
 Add and remove servers from the tray menu:
@@ -37,8 +53,9 @@ Add and remove servers from the tray menu:
   `1.2.3.4`, `1.2.3.4:27015`, `connect 1.2.3.4:27015` and `steam://connect/1.2.3.4:27015`.
 - **Remove server** lists the servers. It asks before removing one.
 
-These save to `servers.json`, so the folder it sits in must be writable. You can also edit the file by
-hand. The optional `name` replaces the name the server reports.
+These save to `servers.json`, so the folder it sits in must be writable. If the file is missing, it's
+created with UNLOZE ZE. You can also edit the file by hand. The optional `name` replaces the name the
+server reports.
 
 ```json
 [

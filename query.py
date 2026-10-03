@@ -16,9 +16,15 @@ TIMEOUT = 3.0
 BASE_DIR = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).parent
 SERVERS_FILE = BASE_DIR / "servers.json"
 
+# Written to servers.json when it doesn't exist yet, e.g. the first time the .exe runs.
+DEFAULT_SERVERS = [{"name": "UNLOZE ZE", "ip": "51.195.188.106", "port": 27015}]
+
 
 def load_servers(path=SERVERS_FILE):
-    """Read servers.json. Raises ValueError with a readable message if an entry is invalid."""
+    """Read servers.json, creating it with the default servers if it's missing.
+    Raises ValueError with a readable message if an entry is invalid."""
+    if not path.exists():
+        save_servers(DEFAULT_SERVERS, path)
     with open(path, encoding="utf-8") as f:
         servers = json.load(f)
     if not isinstance(servers, list):
