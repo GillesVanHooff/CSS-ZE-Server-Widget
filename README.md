@@ -22,8 +22,8 @@ py -m venv .venv
 .venv\Scripts\python.exe main.py
 ```
 
-Right-click the tray icon to open the menu. The icon shows the total players over the total capacity of
-the online servers, for example 44 over 104. Hover over it to see the same numbers as text.
+Click the tray icon (left or right) to open the menu. The icon shows the total number of players on the
+online servers. Hover over it to see players and capacity, for example `44/104`.
 
 To check the servers without the tray, run `.venv\Scripts\python.exe query.py`.
 

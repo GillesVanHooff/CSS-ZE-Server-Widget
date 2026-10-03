@@ -1,5 +1,6 @@
 """Query CS:S servers over Valve's A2S protocol and report their status."""
 
+import ipaddress
 import json
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -15,8 +16,31 @@ SERVERS_FILE = BASE_DIR / "servers.json"
 
 
 def load_servers(path=SERVERS_FILE):
+    """Read servers.json. Raises ValueError with a readable message if an entry is invalid."""
     with open(path, encoding="utf-8") as f:
-        return json.load(f)
+        servers = json.load(f)
+    if not isinstance(servers, list):
+        raise ValueError("servers.json must contain a list of servers")
+    for n, server in enumerate(servers, 1):
+        _validate(server, f"servers.json entry {n}")
+    return servers
+
+
+def _validate(server, where):
+    # ip and port end up in a steam:// URL, so only accept a plain IPv4 address and a port number.
+    if not isinstance(server, dict):
+        raise ValueError(f"{where}: must be an object")
+    ip = server.get("ip")
+    try:
+        ipaddress.IPv4Address(ip if isinstance(ip, str) else "")
+    except ValueError:
+        raise ValueError(f"{where}: ip {ip!r} is not an IPv4 address") from None
+    port = server.get("port", 27015)
+    if type(port) is not int or not 1 <= port <= 65535:  # type() check also rejects true/false
+        raise ValueError(f"{where}: port {port!r} must be a number from 1 to 65535")
+    name = server.get("name")
+    if name is not None and not isinstance(name, str):
+        raise ValueError(f"{where}: name {name!r} must be text")
 
 
 def _info_with_retry(address):
