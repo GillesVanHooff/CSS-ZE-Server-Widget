@@ -53,6 +53,13 @@ def _validate(server, where):
     name = server.get("name")
     if name is not None and not isinstance(name, str):
         raise ValueError(f"{where}: name {name!r} must be text")
+    if not isinstance(server.get("preferred", False), bool):
+        raise ValueError(f"{where}: preferred must be true or false")
+
+
+def preferred_address(servers):
+    """Address of the preferred server, or None. If a hand edit marks several, the first one wins."""
+    return next((address(s) for s in servers if s.get("preferred")), None)
 
 
 def save_servers(servers, path=SERVERS_FILE):

@@ -12,8 +12,8 @@ from pystray._util import win32  # private pystray API: keep pystray pinned in r
 
 import startup
 from dialogs import MB_ICONERROR, ask_server, confirm, message, read_clipboard
-from query import (SERVERS_FILE, address, bold_digits, format_status, load_servers, parse_address, query_all,
-                   save_servers, totals)
+from query import (SERVERS_FILE, address, bold_digits, format_status, load_servers, parse_address,
+                   preferred_address, query_all, save_servers, totals)
 
 REFRESH_SECONDS = 30
 ICON_SIZE = 64  # Windows scales it down to 16-32 px in the tray
@@ -125,12 +125,16 @@ class TrayApp:
         elif not self.statuses:
             yield pystray.MenuItem("No servers yet", None, enabled=False)
         else:
-            for s in self.statuses:
-                yield pystray.MenuItem(format_status(s, bold=True), _connect(s["address"]), enabled=s["online"])
+            preferred = preferred_address(self.servers)
+            for s in sorted(self.statuses, key=lambda s: s["address"] != preferred):  # preferred first
+                text = format_status(s, bold=True)
+                yield pystray.MenuItem(f"★ {text}" if s["address"] == preferred else text,
+                                       _connect(s["address"]), enabled=s["online"])
         yield pystray.Menu.SEPARATOR
         yield pystray.MenuItem("Add server…", self._dialog(self._ask_server))
         yield pystray.MenuItem("Add server from clipboard", self._dialog(self._add_from_clipboard))
         yield pystray.MenuItem("Remove server", pystray.Menu(self._remove_items), enabled=bool(self.servers))
+        yield pystray.MenuItem("Preferred server", pystray.Menu(self._preferred_items), enabled=bool(self.servers))
         yield pystray.MenuItem("Open servers.json", _open_servers_file)
         yield pystray.Menu.SEPARATOR
         yield pystray.MenuItem("Start with Windows", self._toggle_startup, checked=lambda _item: startup.is_enabled())
@@ -140,6 +144,33 @@ class TrayApp:
     def _remove_items(self):
         for server in self.servers:
             yield pystray.MenuItem(self._label(server), self._dialog(partial(self._confirm_remove, server)))
+
+    def _preferred_items(self):
+        preferred = preferred_address(self.servers)
+        for server in self.servers:
+            addr = address(server)
+            yield pystray.MenuItem(self._label(server), self._prefer_action(addr),
+                                   checked=lambda _item, addr=addr: addr == preferred, radio=True)
+
+    def _prefer_action(self, addr):
+        # A factory, so each menu item keeps its own address (a lambda in the loop would see only the last one).
+        return lambda: self._toggle_preferred(addr)
+
+    def _toggle_preferred(self, addr):
+        """Make addr the preferred server, or clear it if it already is."""
+        try:
+            with self._servers_lock:
+                make_preferred = preferred_address(self.servers) != addr
+                servers = [{k: v for k, v in s.items() if k != "preferred"} for s in self.servers]
+                for s in servers:
+                    if make_preferred and address(s) == addr:
+                        s["preferred"] = True
+                self._save(servers)
+        except ValueError as e:
+            self._dialog(partial(message, str(e), MB_ICONERROR))()
+            return
+        if self.statuses is not None:
+            self._show(self.statuses)  # redraw the icon now instead of after the refresh
 
     def _label(self, server):
         """Name and address, using the name the server reports when servers.json has none."""
@@ -254,15 +285,29 @@ class TrayApp:
         with self._show_lock:  # the refresh thread and a remove can both get here
             self.statuses = statuses
             players, capacity = totals(statuses)
-            shown = (players if capacity else None, any(s["event"] for s in statuses))
+            total = f"{bold_digits(f'{players}/{capacity}')} players" if capacity else "all servers offline"
+            addr = preferred_address(self.servers)
+            preferred = next((s for s in statuses if s["address"] == addr), None)
+            if preferred:
+                # The icon follows the preferred server; the tooltip adds the total when there's more than one.
+                icon_players = preferred["players"] if preferred["online"] else None
+                count = f"{preferred['players']}/{preferred['max_players']}"
+                own = f"{bold_digits(count)} players" if preferred["online"] else "offline"
+                # pystray raises on tooltips over 128 characters, so cut long server names short.
+                title = f"{preferred['name'][:40]}: {own}"
+                if len(statuses) > 1:
+                    title += f"\nAll servers: {total}"
+            else:
+                icon_players = players if capacity else None
+                title = f"CSS ZE: {total}"
+            shown = (icon_players, any(s["event"] for s in statuses))
             if shown != self._shown:
                 event_started = shown[1] and not self._shown[1]
                 self.icon.icon = make_icon(*shown)
                 self._shown = shown
                 if event_started:
                     threading.Thread(target=self._blink, daemon=True).start()
-            self.icon.title = (f"CSS ZE: {bold_digits(f'{players}/{capacity}')} players" if capacity
-                               else "CSS ZE: all servers offline")
+            self.icon.title = title
             self.icon.update_menu()
 
     def _blink(self):
