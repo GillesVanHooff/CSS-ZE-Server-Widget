@@ -8,12 +8,16 @@ import pystray
 from PIL import Image, ImageDraw, ImageFont
 from pystray._util import win32  # private pystray API: keep pystray pinned in requirements.txt
 
-from query import format_status, query_all, totals
+from query import bold_digits, format_status, query_all, totals
 
 REFRESH_SECONDS = 30
 ICON_SIZE = 64  # Windows scales it down to 16-32 px in the tray
 
+BLINK_SECONDS = 10  # how long the icon flashes when an event starts
+BLINK_INTERVAL = 0.5
+
 ONLINE_BG = (46, 125, 50)
+EVENT_BG = (230, 81, 0)  # deep orange, so the white digits stay readable
 OFFLINE_BG = (97, 97, 97)
 TEXT = (255, 255, 255)
 
@@ -39,13 +43,13 @@ def _draw_fitted(draw, text, max_size):
               text, font=font, fill=TEXT)
 
 
-def make_icon(players=None):
-    """Total player count on a colored square; a dash when everything is offline."""
+def make_icon(players=None, event=False):
+    """Total player count on a colored square (orange during an event); a dash when everything is offline."""
     online = players is not None
     img = Image.new("RGBA", (ICON_SIZE, ICON_SIZE), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
     draw.rounded_rectangle((0, 0, ICON_SIZE - 1, ICON_SIZE - 1), radius=8,
-                           fill=ONLINE_BG if online else OFFLINE_BG)
+                           fill=EVENT_BG if event else ONLINE_BG if online else OFFLINE_BG)
     _draw_fitted(draw, str(players) if online else "–", ICON_SIZE - 6)
     return img
 
@@ -67,7 +71,7 @@ class TrayApp:
     def __init__(self, servers):
         self.servers = servers
         self.statuses = None  # None until the first refresh finishes
-        self._shown = None  # player count on the icon, None for the offline dash
+        self._shown = (None, False)  # make_icon args now on the icon: (players or None, event)
         self._wake = threading.Event()
         self._stopping = threading.Event()
         self.icon = _Icon(
@@ -81,7 +85,7 @@ class TrayApp:
             yield pystray.MenuItem("Checking servers…", None, enabled=False)
         else:
             for s in self.statuses:
-                yield pystray.MenuItem(format_status(s), _connect(s["address"]), enabled=s["online"])
+                yield pystray.MenuItem(format_status(s, bold=True), _connect(s["address"]), enabled=s["online"])
         yield pystray.Menu.SEPARATOR
         yield pystray.MenuItem("Refresh now", self._wake.set)
         yield pystray.MenuItem("Quit", self._quit)
@@ -100,12 +104,28 @@ class TrayApp:
     def _refresh(self):
         self.statuses = query_all(self.servers)
         players, capacity = totals(self.statuses)
-        shown = players if capacity else None
+        shown = (players if capacity else None, any(s["event"] for s in self.statuses))
         if shown != self._shown:
-            self.icon.icon = make_icon(shown)
+            event_started = shown[1] and not self._shown[1]
+            self.icon.icon = make_icon(*shown)
             self._shown = shown
-        self.icon.title = f"CSS ZE: {players}/{capacity} players" if capacity else "CSS ZE: all servers offline"
+            if event_started:
+                threading.Thread(target=self._blink, daemon=True).start()
+        self.icon.title = (f"CSS ZE: {bold_digits(f'{players}/{capacity}')} players" if capacity
+                           else "CSS ZE: all servers offline")
         self.icon.update_menu()
+
+    def _blink(self):
+        # Own thread, so the flashing doesn't hold up refreshes. Reads self._shown on every frame,
+        # so a refresh in between still shows the latest count.
+        for frame in range(int(BLINK_SECONDS / BLINK_INTERVAL)):
+            if self._stopping.wait(BLINK_INTERVAL):
+                return
+            players, event = self._shown
+            if not event:  # the event ended mid-blink and _refresh already drew the normal icon
+                return
+            self.icon.icon = make_icon(players, event=frame % 2 == 1)
+        self.icon.icon = make_icon(*self._shown)
 
     def _quit(self):
         self._stopping.set()

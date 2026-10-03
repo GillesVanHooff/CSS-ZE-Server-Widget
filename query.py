@@ -9,6 +9,7 @@ from pathlib import Path
 import a2s
 
 TIMEOUT = 3.0
+FAKE_EVENT = False  # set by the --fake-event flag, to test the event look without a real event
 
 # servers.json sits next to the .exe when packaged, next to this file otherwise.
 BASE_DIR = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).parent
@@ -63,21 +64,27 @@ def query_server(server):
         "players": 0,
         "max_players": 0,
         "ping_ms": None,
+        "event": False,
     }
     try:
         info = _info_with_retry((ip, port))
     except (OSError, a2s.BrokenMessageError):  # timeouts are OSError too
         return status
 
+    server_name = info.server_name
+    if FAKE_EVENT:
+        server_name += " | FAKE EVENT"
     status.update(
         online=True,
         map=info.map_name,
         players=info.player_count - info.bot_count,
         max_players=info.max_players,
         ping_ms=round(info.ping * 1000),
+        # Checked on the live name, so it works even when servers.json overrides the name.
+        event="EVENT" in server_name,
     )
     if not server.get("name"):
-        status["name"] = info.server_name.strip(" |")
+        status["name"] = server_name.strip(" |")
     return status
 
 
@@ -93,12 +100,23 @@ def totals(statuses):
     return sum(s["players"] for s in online), sum(s["max_players"] for s in online)
 
 
-def format_status(s):
+BOLD_DIGITS = str.maketrans("0123456789", "𝟎𝟏𝟐𝟑𝟒𝟓𝟔𝟕𝟖𝟗")
+
+
+def bold_digits(text):
+    """Swap 0-9 for Unicode bold digits, since Windows menus can't bold part of a line."""
+    return text.translate(BOLD_DIGITS)
+
+
+def format_status(s, bold=False):
     if not s["online"]:
         return f"{s['name']} · offline"
-    return f"{s['name']} · {s['map']} · {s['players']}/{s['max_players']} · {s['ping_ms']} ms"
+    players = f"{s['players']}/{s['max_players']}"
+    name = f"[EVENT] {s['name']}" if s["event"] else s["name"]
+    return f"{name} · {s['map']} · {bold_digits(players) if bold else players} · {s['ping_ms']} ms"
 
 
 if __name__ == "__main__":
+    FAKE_EVENT = "--fake-event" in sys.argv
     for s in query_all(load_servers()):
         print(format_status(s))

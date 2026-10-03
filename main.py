@@ -1,5 +1,7 @@
 import ctypes
+import sys
 
+import query
 from query import load_servers
 from tray import TrayApp
 
@@ -17,6 +19,7 @@ def _message(text, flags):
 
 
 def main():
+    query.FAKE_EVENT = "--fake-event" in sys.argv
     # Windows holds a named mutex until the process exits, so a second copy finds it and stops.
     _mutex = kernel32.CreateMutexW(None, False, "css-ze-widget")
     if ctypes.get_last_error() == ERROR_ALREADY_EXISTS:
