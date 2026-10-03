@@ -6,9 +6,17 @@ A lightweight Windows system tray widget for CSS: ZE servers.
 - Click a server to join it. CSS launches through Steam if it isn't already running.
 - Servers that are down stay in the list as offline and come back on their own.
 
-> **Status:** the tray app and the `.exe` build work.
+## Download
 
-## Requirements
+**[Download CSS-ZE-Widget.exe](https://github.com/GillesVanHooff/CSS-ZE-Server-Widget/releases/latest/download/CSS-ZE-Widget.exe)**
+(latest release; older versions are on the [releases page](https://github.com/GillesVanHooff/CSS-ZE-Server-Widget/releases)).
+
+Put it in any folder and run it. You need Windows 10/11 and Steam with Counter-Strike: Source. Python isn't needed.
+
+The `.exe` isn't signed, so the first time Windows shows "Windows protected your PC". Click **More info**,
+then **Run anyway**.
+
+## Requirements to run from source
 
 - Windows 10/11
 - Python 3.12+ from [python.org](https://www.python.org/downloads/) (not the Microsoft Store placeholder)
@@ -37,6 +45,18 @@ This installs PyInstaller into the venv, draws the icon (`make_ico.py`) and writ
 `dist\CSS-ZE-Widget.exe`. That one file is all you need, and it can go in any folder.
 
 Unsigned single-file builds sometimes set off antivirus false positives.
+
+### Publish a release
+
+Push a version tag. GitHub Actions (`.github/workflows/release.yml`) then builds the `.exe` and publishes it
+as a release, with the commits since the previous one as release notes:
+
+```powershell
+git tag v1.0.0
+git push CSS-ZE-Server-Widget v1.0.0
+```
+
+Follow the run under the repo's **Actions** tab. It takes a few minutes.
 
 To start the widget when you log in, tick **Start with Windows** in the tray menu. It adds the `.exe`'s
 current location to your user's startup list. If you move the `.exe`, the item shows as unticked: tick it

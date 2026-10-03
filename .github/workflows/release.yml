@@ -1,0 +1,31 @@
+# Pushing a version tag builds the .exe on a fresh Windows machine and publishes it as a GitHub release:
+#   git tag v1.0.0
+#   git push CSS-ZE-Server-Widget v1.0.0
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write  # to create the release and attach the .exe
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      # One command per step: a failing command mid-script wouldn't stop a multi-line PowerShell step.
+      - name: Create venv
+        run: python -m venv .venv
+      - name: Install dependencies
+        run: .venv\Scripts\python.exe -m pip install -r requirements.txt
+      - name: Build
+        run: powershell -ExecutionPolicy Bypass -File build.ps1
+      - uses: softprops/action-gh-release@v3
+        with:
+          files: dist/CSS-ZE-Widget.exe
+          generate_release_notes: true  # lists the commits since the previous release
