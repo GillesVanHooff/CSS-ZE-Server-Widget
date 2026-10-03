@@ -6,7 +6,7 @@ A lightweight Windows system tray widget for CSS: ZE servers.
 - Click a server to join it. CSS launches through Steam if it isn't already running.
 - Servers that are down stay in the list as offline and come back on their own.
 
-> **Status:** early development. Nothing is implemented yet.
+> **Status:** the tray app works. Packaging as an `.exe` isn't done yet.
 
 ## Requirements
 
@@ -17,11 +17,15 @@ A lightweight Windows system tray widget for CSS: ZE servers.
 ## Setup
 
 ```powershell
-py -3.12 -m venv .venv
-.venv\Scripts\Activate.ps1
-pip install python-a2s pystray Pillow
-python main.py
+py -m venv .venv
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+.venv\Scripts\python.exe main.py
 ```
+
+Right-click the tray icon to open the menu. The icon shows the total players over the total capacity of
+the online servers, for example 44 over 104. Hover over it to see the same numbers as text.
+
+To check the servers without the tray, run `.venv\Scripts\python.exe query.py`.
 
 ## Configuration
 

@@ -1,2 +1,7 @@
 PLAN.md
 CLAUDE.md
+.venv/
+__pycache__/
+build/
+dist/
+*.spec
