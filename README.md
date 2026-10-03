@@ -29,7 +29,16 @@ To check the servers without the tray, run `.venv\Scripts\python.exe query.py`.
 
 ## Configuration
 
-List the servers in `servers.json`. The optional `name` replaces the name the server reports.
+Add and remove servers from the tray menu:
+
+- **Add server…** opens a small window for `IP:port` and an optional name. If the clipboard holds an
+  address, the field is filled in already.
+- **Add server from clipboard** adds the address you copied without opening a window. It accepts
+  `1.2.3.4`, `1.2.3.4:27015`, `connect 1.2.3.4:27015` and `steam://connect/1.2.3.4:27015`.
+- **Remove server** lists the servers. It asks before removing one.
+
+These save to `servers.json`, so the folder it sits in must be writable. You can also edit the file by
+hand. The optional `name` replaces the name the server reports.
 
 ```json
 [

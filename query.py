@@ -2,6 +2,8 @@
 
 import ipaddress
 import json
+import os
+import re
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -43,6 +45,36 @@ def _validate(server, where):
         raise ValueError(f"{where}: name {name!r} must be text")
 
 
+def save_servers(servers, path=SERVERS_FILE):
+    """Write servers.json with one server per line, like the hand-written file."""
+    lines = ["  { " + ", ".join(f"{json.dumps(k)}: {json.dumps(v, ensure_ascii=False)}" for k, v in s.items()) + " }"
+             for s in servers]
+    # Write a temp file and swap it in, so a crash mid-write can't leave a broken servers.json.
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text("[\n" + ",\n".join(lines) + "\n]\n" if lines else "[]\n", encoding="utf-8")
+    os.replace(tmp, path)
+
+
+# The first IPv4 address in the text, with an optional :port.
+ADDRESS_RE = re.compile(r"(?<![\d.])(\d{1,3}(?:\.\d{1,3}){3})(?::(\d+))?(?!\d)")
+
+
+def parse_address(text, name=None):
+    """Make a server entry from pasted text: 1.2.3.4, 1.2.3.4:27016, "connect 1.2.3.4:27016",
+    steam://connect/1.2.3.4:27016, and so on. Raises ValueError with a readable message."""
+    match = ADDRESS_RE.search(text)
+    if not match:
+        raise ValueError("No IP address found. Expected something like 1.2.3.4:27015.")
+    server = {"name": name} if name else {}
+    server.update(ip=match[1], port=int(match[2] or 27015))
+    _validate(server, "Address")
+    return server
+
+
+def address(server):
+    return f"{server['ip']}:{server.get('port', 27015)}"
+
+
 def _info_with_retry(address):
     # UDP queries get dropped now and then (~1 in 4 seen on UNLOZE), so one timeout
     # isn't enough to call a server offline.
@@ -56,8 +88,8 @@ def query_server(server):
     """Return a status dict for one server. Never raises: failures mean offline."""
     ip, port = server["ip"], server.get("port", 27015)
     status = {
-        "name": server.get("name") or f"{ip}:{port}",
-        "address": f"{ip}:{port}",
+        "name": server.get("name") or address(server),
+        "address": address(server),
         "online": False,
         "map": None,
         "players": 0,
