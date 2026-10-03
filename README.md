@@ -5,6 +5,15 @@ A lightweight Windows system tray widget for CSS: ZE servers.
 - The tray menu lists each server with its name, map, player count and ping.
 - Click a server to join it. CSS launches through Steam if it isn't already running.
 - Servers that are down stay in the list as offline and come back on their own.
+- When an event starts, the icon flashes. It stays orange while the event is on.
+
+<p>
+  <img src="screenshots/ZE_Player_Count_1.png" alt="Tray menu with a server's map, players and ping" width="355">
+  &nbsp;
+  <img src="screenshots/ZE_Player_Count_2.png" alt="Add server dialog" width="291">
+  &nbsp;
+  <img src="screenshots/ZE_Player_Count_3.png" alt="Tooltip showing players and capacity" width="152">
+</p>
 
 ## Download
 
