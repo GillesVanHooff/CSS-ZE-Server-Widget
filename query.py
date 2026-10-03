@@ -12,9 +12,13 @@ import a2s
 
 TIMEOUT = 3.0
 
-# servers.json sits next to the .exe when packaged, next to this file otherwise.
-BASE_DIR = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).parent
-SERVERS_FILE = BASE_DIR / "servers.json"
+# Packaged: in %APPDATA%, which is always writable and stays put when the .exe is moved.
+# From source: next to this file, so a development copy keeps its own list.
+if getattr(sys, "frozen", False):
+    CONFIG_DIR = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming") / "CSS-ZE-Widget"
+else:
+    CONFIG_DIR = Path(__file__).parent
+SERVERS_FILE = CONFIG_DIR / "servers.json"
 
 # Written to servers.json when it doesn't exist yet, e.g. the first time the .exe runs.
 DEFAULT_SERVERS = [{"name": "UNLOZE ZE", "ip": "51.195.188.106", "port": 27015}]
@@ -55,6 +59,7 @@ def save_servers(servers, path=SERVERS_FILE):
     """Write servers.json with one server per line, like the hand-written file."""
     lines = ["  { " + ", ".join(f"{json.dumps(k)}: {json.dumps(v, ensure_ascii=False)}" for k, v in s.items()) + " }"
              for s in servers]
+    path.parent.mkdir(parents=True, exist_ok=True)  # the AppData folder doesn't exist on first run
     # Write a temp file and swap it in, so a crash mid-write can't leave a broken servers.json.
     tmp = path.with_suffix(".tmp")
     tmp.write_text("[\n" + ",\n".join(lines) + "\n]\n" if lines else "[]\n", encoding="utf-8")

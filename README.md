@@ -34,8 +34,7 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 ```
 
 This installs PyInstaller into the venv, draws the icon (`make_ico.py`) and writes
-`dist\CSS-ZE-Widget.exe`. That one file is all you need. Put it in a folder you can write to, not
-Program Files: on first run it creates `servers.json` next to itself, with UNLOZE ZE in it.
+`dist\CSS-ZE-Widget.exe`. That one file is all you need, and it can go in any folder.
 
 Unsigned single-file builds sometimes set off antivirus false positives.
 
@@ -52,10 +51,16 @@ Add and remove servers from the tray menu:
 - **Add server from clipboard** adds the address you copied without opening a window. It accepts
   `1.2.3.4`, `1.2.3.4:27015`, `connect 1.2.3.4:27015` and `steam://connect/1.2.3.4:27015`.
 - **Remove server** lists the servers. It asks before removing one.
+- **Open servers.json** opens the list in Notepad. The widget picks up your changes on the next refresh,
+  or right away with **Refresh now**.
 
-These save to `servers.json`, so the folder it sits in must be writable. If the file is missing, it's
-created with UNLOZE ZE. You can also edit the file by hand. The optional `name` replaces the name the
-server reports.
+The list is saved in `servers.json`:
+
+- The `.exe` keeps it in `%APPDATA%\CSS-ZE-Widget\`, so it stays put when the `.exe` moves.
+- Running from source, it's the one in the project folder.
+
+If the file is missing, it's created with UNLOZE ZE. If a hand edit breaks it, the widget says so and keeps
+the previous list. The optional `name` replaces the name the server reports.
 
 ```json
 [

@@ -2,6 +2,7 @@
 
 import gc
 import os
+import subprocess
 import threading
 from functools import lru_cache, partial
 
@@ -11,7 +12,8 @@ from pystray._util import win32  # private pystray API: keep pystray pinned in r
 
 import startup
 from dialogs import MB_ICONERROR, ask_server, confirm, message, read_clipboard
-from query import address, bold_digits, format_status, parse_address, query_all, save_servers, totals
+from query import (SERVERS_FILE, address, bold_digits, format_status, load_servers, parse_address, query_all,
+                   save_servers, totals)
 
 REFRESH_SECONDS = 30
 ICON_SIZE = 64  # Windows scales it down to 16-32 px in the tray
@@ -88,6 +90,18 @@ def _connect(address):
     return lambda: os.startfile(f"steam://connect/{address}")
 
 
+def _open_servers_file():
+    # Notepad rather than os.startfile: a fresh Windows has no app set for .json files.
+    subprocess.Popen(["notepad.exe", str(SERVERS_FILE)])
+
+
+def _mtime():
+    try:
+        return SERVERS_FILE.stat().st_mtime_ns
+    except OSError:  # deleted; load_servers recreates it
+        return None
+
+
 class TrayApp:
     def __init__(self, servers):
         self.servers = servers
@@ -98,6 +112,7 @@ class TrayApp:
         self._servers_lock = threading.Lock()  # add and remove each read, change and save the list
         self._dialog_open = threading.Lock()  # one dialog at a time
         self._show_lock = threading.Lock()
+        self._servers_mtime = _mtime()  # main.py just loaded the file
         self.icon = _Icon(
             "css-ze-widget", make_icon(), "CSS ZE: checking servers…",
             menu=pystray.Menu(self._menu_items),
@@ -116,6 +131,7 @@ class TrayApp:
         yield pystray.MenuItem("Add server…", self._dialog(self._ask_server))
         yield pystray.MenuItem("Add server from clipboard", self._dialog(self._add_from_clipboard))
         yield pystray.MenuItem("Remove server", pystray.Menu(self._remove_items), enabled=bool(self.servers))
+        yield pystray.MenuItem("Open servers.json", _open_servers_file)
         yield pystray.Menu.SEPARATOR
         yield pystray.MenuItem("Start with Windows", self._toggle_startup, checked=lambda _item: startup.is_enabled())
         yield pystray.MenuItem("Refresh now", self._wake.set)
@@ -198,6 +214,7 @@ class TrayApp:
         except OSError as e:
             raise ValueError(f"Could not save servers.json:\n\n{e}") from None
         self.servers = servers
+        self._servers_mtime = _mtime()  # our own save, nothing to reload
         self._wake.set()  # query the new list right away
 
     def _refresh_loop(self):
@@ -211,7 +228,22 @@ class TrayApp:
                 self.icon.title = "CSS ZE: refresh failed, retrying"
             self._wake.wait(REFRESH_SECONDS)
 
+    def _reload_if_edited(self):
+        """Pick up changes made to servers.json by hand, e.g. after "Open servers.json"."""
+        with self._servers_lock:
+            mtime = _mtime()
+            if mtime == self._servers_mtime:
+                return
+            self._servers_mtime = mtime
+            try:
+                self.servers = load_servers()
+            except (OSError, ValueError) as e:
+                # Keep the last good list. The mtime is already stored, so this shows once per save.
+                text = f"servers.json has an error, so the widget keeps using the previous list:\n\n{e}"
+                self._dialog(partial(message, text, MB_ICONERROR))()
+
     def _refresh(self):
+        self._reload_if_edited()
         statuses = query_all(self.servers)
         # A server removed while the queries ran must not come back from these results.
         listed = {address(s) for s in self.servers}
