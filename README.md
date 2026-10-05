@@ -11,11 +11,16 @@ A lightweight Windows system tray widget for CSS: ZE servers.
   notification to join.
 
 <p>
-  <img src="screenshots/ZE_Player_Count_1.png" alt="Tray menu with a server's map, players and ping" width="355">
+  <img src="screenshots/ZE_Player_Count_4.png" alt="Tray menu with a server's map, players and ping" width="355">
   &nbsp;
   <img src="screenshots/ZE_Player_Count_2.png" alt="Add server dialog" width="291">
   &nbsp;
   <img src="screenshots/ZE_Player_Count_3.png" alt="Tooltip showing players and capacity" width="152">
+</p>
+<p>
+  <img src="screenshots/ZE_Player_Count_5.png" alt="Favourite maps window with favourites at the top" width="400">
+  &nbsp;
+  <img src="screenshots/ZE_Player_Count_6.png" alt="Notification that a favourite map is being played" width="395">
 </p>
 
 ## Download
