@@ -125,9 +125,9 @@ def ask_favourites(maps, favourites, on_save, icons=()):
     _placeholder(search_entry, "Search maps")
 
     tree = ttk.Treeview(frame, columns=("favourite", "map"), show="headings", height=18)
-    tree.heading("favourite", text="♥")
-    tree.heading("map", text="Map", anchor="w")
-    tree.column("favourite", width=32, anchor="center", stretch=False)
+    tree.heading("favourite", command=lambda: sort("favourite"))
+    tree.heading("map", anchor="w", command=lambda: sort("map"))
+    tree.column("favourite", width=44, anchor="center", stretch=False)  # room for "♥ ▲"
     tree.column("map", width=340)
     scrollbar = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
     tree.configure(yscrollcommand=scrollbar.set)
@@ -142,18 +142,35 @@ def ask_favourites(maps, favourites, on_save, icons=()):
     bottom.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(10, 0))
     bottom.columnconfigure(1, weight=1)
     ttk.Checkbutton(bottom, text="Favourites only", variable=only_favourites).grid(row=0, column=0)
-    count = ttk.Label(bottom)
+    count = ttk.Label(bottom, width=30)  # fixed, so the buttons don't shift as the text changes
     count.grid(row=0, column=1, padx=12, sticky="w")
 
     def show_count():
-        count.configure(text=f"{len(chosen)} favourite{'' if len(chosen) == 1 else 's'}")
+        # "12 of 878 maps" while a search or Favourites only hides some, else "878 maps".
+        shown = len(tree.get_children())
+        total = f"{shown} of {len(maps)} maps" if shown < len(maps) else f"{len(maps)} maps"
+        count.configure(text=f"{len(chosen)} favourite{'' if len(chosen) == 1 else 's'} · {total}")
+
+    sort_by, descending = "favourite", False  # opens with the favourites on top
+
+    def sort(column):
+        # ♥ puts favourites on top. Map sorts A-Z, and Z-A when it's clicked again.
+        nonlocal sort_by, descending
+        descending = column == sort_by == "map" and not descending
+        sort_by = column
+        fill()
 
     def fill(*_args):
         text = search.get().strip().lower()
+        shown = sorted(maps, reverse=descending)
+        if sort_by == "favourite":
+            shown.sort(key=lambda name: name not in chosen)  # a stable sort, so each group stays A-Z
         tree.delete(*tree.get_children())
-        for name in maps:
+        for name in shown:
             if text in name and (name in chosen or not only_favourites.get()):
                 tree.insert("", "end", iid=name, values=("♥" if name in chosen else "", name))
+        tree.heading("favourite", text="♥ ▲" if sort_by == "favourite" else "♥")
+        tree.heading("map", text=f"Map {'▼' if descending else '▲'}" if sort_by == "map" else "Map")
         show_count()
 
     def toggle(_event=None):

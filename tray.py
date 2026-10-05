@@ -5,6 +5,7 @@ import gc
 import os
 import subprocess
 import threading
+import time
 import winreg
 from functools import lru_cache, partial
 
@@ -100,6 +101,15 @@ def _register_app_id():
 
 
 NIN_BALLOONUSERCLICK = win32.WM_USER + 5  # Windows sends this when a notification from the icon is clicked
+SPI_GETMESSAGEDURATION = 0x2016
+
+
+def _toast_seconds():
+    """How long a notification stays on screen: Windows' "Dismiss notifications after" setting (5 s by
+    default), plus a second for it to slide in and out. Windows itself reports it gone right away."""
+    seconds = ctypes.c_ulong(5)
+    ctypes.windll.user32.SystemParametersInfoW(SPI_GETMESSAGEDURATION, 0, ctypes.byref(seconds), 0)
+    return seconds.value + 1
 
 
 class _Icon(pystray.Icon):
@@ -153,6 +163,7 @@ class TrayApp:
         self._favourites_lock = threading.Lock()
         self._last_maps = {}  # address -> map last seen there, to spot map changes
         self._renotify = False  # set by "Refresh now": notify about favourites that are already on, too
+        self._toast_until = 0.0  # time.monotonic() when the last notification has left the screen
         _register_app_id()  # before the tray icon exists, so its notifications get the ID
         self.icon = _Icon(
             "css-ze-widget", make_icon(), "CSS ZE: checking servers…",
@@ -386,6 +397,10 @@ class TrayApp:
         # Read and reset here, on the refresh thread. A click after this line leaves it set for the
         # refresh its _wake.set() starts right after this one.
         renotify, self._renotify = self._renotify, False
+        if time.monotonic() < self._toast_until:
+            # The last one is still on screen. Windows would queue another behind it, so quick clicks on
+            # "Refresh now" piled up. Map switches still notify.
+            renotify = False
         found = []
         for s in statuses:
             if not s["online"]:
@@ -409,6 +424,7 @@ class TrayApp:
             self.icon.toast_address = None  # a click opens the menu instead
         # Windows' limits for the notification's title and text.
         self.icon.notify(text[:255], title[:63])
+        self._toast_until = time.monotonic() + _toast_seconds()
 
     def _show(self, statuses):
         """Put statuses on the icon, tooltip and menu."""
