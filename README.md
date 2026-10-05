@@ -33,6 +33,21 @@ Put it in any folder and run it. You need Windows 10/11 and Steam with Counter-S
 The `.exe` isn't signed, so the first time Windows shows "Windows protected your PC". Click **More info**,
 then **Run anyway**.
 
+**Notifications:** to be notified when a favourite map is played, Windows notifications must be on. If you
+turned them all off, you don't have to get every app's notifications back. The settings have different names
+on Windows 10 and 11:
+
+| | Windows 11 | Windows 10 |
+|---|---|---|
+| Settings page | **System → Notifications** | **System → Notifications & actions** |
+| Main switch | **Notifications** | **Get notifications from apps and other senders** |
+| App list | **Notifications from apps and other senders** | **Get notifications from these senders** |
+
+1. Open the settings page and turn on the main switch. Windows can't let a single app through while it's off.
+2. In the app list below it, turn off the apps you don't want to hear from.
+3. Leave **CSS ZE Widget** on. It's added to the list after its first notification. To get one right away,
+   click **Refresh now** while a server is playing one of your favourite maps.
+
 ## Configuration
 
 Add and remove servers from the tray menu:
