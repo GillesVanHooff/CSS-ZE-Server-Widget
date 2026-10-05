@@ -7,6 +7,8 @@ A lightweight Windows system tray widget for CSS: ZE servers.
 - **Steam server browser** in the menu opens Steam's server list, to find more servers to add.
 - Servers that are down stay in the list as offline and come back on their own.
 - When an event starts, the icon flashes. It stays orange while the event is on.
+- Mark maps as favourites and get a Windows notification when a server switches to one. Click the
+  notification to join.
 
 <p>
   <img src="screenshots/ZE_Player_Count_1.png" alt="Tray menu with a server's map, players and ping" width="355">
@@ -56,6 +58,22 @@ marks the preferred server.
   { "ip": "1.2.3.4", "port": 27015 }
 ]
 ```
+
+## Favourite maps
+
+**Favourite maps** in the tray menu:
+
+- **Edit favourites…** lists every map Counter-Strike: Source has downloaded, from all your Steam libraries,
+  plus the maps the servers are playing now. Search, then double-click a map or press Space to toggle its ♥.
+  Ctrl and Shift select several at once. **Favourites only** shows just your favourites.
+- **Notify when one is played** turns the notifications on or off.
+
+Favourite maps get a ♥ in the server list. A notification shows when a server switches to a favourite,
+and once at startup if one is already on. **Refresh now** shows it again for any favourite that's on. Map names must match exactly, so `ze_example_v2` and
+`ze_example_v3` are different maps. Notifications need Windows notifications turned on
+(Settings → System → Notifications).
+
+The favourites are saved in `favourites.json`, next to `servers.json`.
 
 ## How it works
 

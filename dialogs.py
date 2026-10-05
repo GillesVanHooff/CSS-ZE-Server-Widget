@@ -1,4 +1,4 @@
-"""Message boxes, the clipboard and the "Add server" dialog.
+"""Message boxes, the clipboard, and the "Add server" and "Favourite maps" dialogs.
 
 All of these block until the user answers, so run them off the tray thread. The Tk functions create and
 destroy their own Tk root, so any thread can run them, as long as only one runs at a time.
@@ -97,4 +97,114 @@ def ask_server(on_add, address="", icons=()):
     root.eval("tk::PlaceWindow . center")
     address_entry.focus_force()
     address_entry.select_range(0, "end")
+    root.mainloop()
+
+
+def ask_favourites(maps, favourites, on_save, icons=()):
+    """Show the Favourite maps dialog: every map in maps, with a ♥ by the ones in favourites.
+    On Save, on_save(added, removed) gets the changes as sets; a ValueError it raises is shown and keeps
+    the dialog open. Passing changes rather than the whole list keeps hand edits to favourites.json made meanwhile."""
+    root = tk.Tk()
+    root.title("Favourite maps")
+    root.attributes("-topmost", True)
+    photos = [ImageTk.PhotoImage(icon, master=root) for icon in icons]
+    if photos:
+        root.iconphoto(False, *photos)
+    chosen = set(favourites)
+
+    frame = ttk.Frame(root, padding=12)
+    frame.grid(sticky="nsew")
+    root.columnconfigure(0, weight=1)  # let the list grow with the window
+    root.rowconfigure(0, weight=1)
+    frame.columnconfigure(0, weight=1)
+    frame.rowconfigure(1, weight=1)
+
+    search = tk.StringVar()
+    search_entry = ttk.Entry(frame, textvariable=search)
+    search_entry.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+    _placeholder(search_entry, "Search maps")
+
+    tree = ttk.Treeview(frame, columns=("favourite", "map"), show="headings", height=18)
+    tree.heading("favourite", text="♥")
+    tree.heading("map", text="Map", anchor="w")
+    tree.column("favourite", width=32, anchor="center", stretch=False)
+    tree.column("map", width=340)
+    scrollbar = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
+    tree.configure(yscrollcommand=scrollbar.set)
+    tree.grid(row=1, column=0, sticky="nsew")
+    scrollbar.grid(row=1, column=1, sticky="ns")
+
+    ttk.Label(frame, text="Double-click or press Space to toggle ♥. Ctrl or Shift selects several maps.",
+              foreground="SystemGrayText").grid(row=2, column=0, columnspan=2, sticky="w", pady=(6, 0))
+
+    only_favourites = tk.BooleanVar()
+    bottom = ttk.Frame(frame)
+    bottom.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+    bottom.columnconfigure(1, weight=1)
+    ttk.Checkbutton(bottom, text="Favourites only", variable=only_favourites).grid(row=0, column=0)
+    count = ttk.Label(bottom)
+    count.grid(row=0, column=1, padx=12, sticky="w")
+
+    def show_count():
+        count.configure(text=f"{len(chosen)} favourite{'' if len(chosen) == 1 else 's'}")
+
+    def fill(*_args):
+        text = search.get().strip().lower()
+        tree.delete(*tree.get_children())
+        for name in maps:
+            if text in name and (name in chosen or not only_favourites.get()):
+                tree.insert("", "end", iid=name, values=("♥" if name in chosen else "", name))
+        show_count()
+
+    def toggle(_event=None):
+        names = tree.selection()
+        if names:
+            # Mixed selection: favourite them all. Already all favourites: remove them all.
+            add = not all(name in chosen for name in names)
+            for name in names:
+                if add:
+                    chosen.add(name)
+                else:
+                    chosen.discard(name)
+                tree.set(name, "favourite", "♥" if add else "")  # the row stays, so a mistake is easy to undo
+            show_count()
+        return "break"  # stop Space and Enter from doing anything else
+
+    def on_double_click(event):
+        if tree.identify_region(event.x, event.y) == "cell":  # not a heading or the empty space below
+            toggle()
+
+    def to_list(_event):
+        first = tree.get_children()[:1]
+        if first:
+            tree.focus_set()
+            tree.focus(first[0])
+            tree.selection_set(first[0])
+        return "break"
+
+    def save(_event=None):
+        try:
+            on_save(chosen - set(favourites), set(favourites) - chosen)
+        except ValueError as e:
+            messagebox.showerror("Can't save favourites", str(e), parent=root)
+        else:
+            root.destroy()
+
+    search.trace_add("write", fill)
+    only_favourites.trace_add("write", fill)
+    tree.bind("<Double-1>", on_double_click)
+    tree.bind("<space>", toggle)
+    tree.bind("<Return>", toggle)
+    search_entry.bind("<Down>", to_list)
+    search_entry.bind("<Return>", to_list)
+    root.bind("<Escape>", lambda _event: root.destroy())
+
+    buttons = ttk.Frame(bottom)
+    buttons.grid(row=0, column=2)
+    ttk.Button(buttons, text="Save", command=save).grid(row=0, column=0, padx=(0, 6))
+    ttk.Button(buttons, text="Cancel", command=root.destroy).grid(row=0, column=1)
+
+    fill()
+    root.eval("tk::PlaceWindow . center")
+    search_entry.focus_force()
     root.mainloop()

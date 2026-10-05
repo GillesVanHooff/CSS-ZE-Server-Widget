@@ -66,10 +66,14 @@ def save_servers(servers, path=SERVERS_FILE):
     """Write servers.json with one server per line, like the hand-written file."""
     lines = ["  { " + ", ".join(f"{json.dumps(k)}: {json.dumps(v, ensure_ascii=False)}" for k, v in s.items()) + " }"
              for s in servers]
+    write_file(path, "[\n" + ",\n".join(lines) + "\n]\n" if lines else "[]\n")
+
+
+def write_file(path, text):
     path.parent.mkdir(parents=True, exist_ok=True)  # the AppData folder doesn't exist on first run
-    # Write a temp file and swap it in, so a crash mid-write can't leave a broken servers.json.
+    # Write a temp file and swap it in, so a crash mid-write can't leave a broken file.
     tmp = path.with_suffix(".tmp")
-    tmp.write_text("[\n" + ",\n".join(lines) + "\n]\n" if lines else "[]\n", encoding="utf-8")
+    tmp.write_text(text, encoding="utf-8")
     os.replace(tmp, path)
 
 
@@ -154,12 +158,13 @@ def bold_digits(text):
     return text.translate(BOLD_DIGITS)
 
 
-def format_status(s, bold=False):
+def format_status(s, bold=False, favourite=False):
     if not s["online"]:
         return f"{s['name']} · offline"
     players = f"{s['players']}/{s['max_players']}"
     name = f"[EVENT] {s['name']}" if s["event"] else s["name"]
-    return f"{name} · {s['map']} · {bold_digits(players) if bold else players} · {s['ping_ms']} ms"
+    map_name = f"♥ {s['map']}" if favourite else s["map"]
+    return f"{name} · {map_name} · {bold_digits(players) if bold else players} · {s['ping_ms']} ms"
 
 
 if __name__ == "__main__":

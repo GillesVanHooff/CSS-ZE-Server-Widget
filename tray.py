@@ -1,9 +1,11 @@
 """System tray icon: player totals on the icon, one menu line per server."""
 
+import ctypes
 import gc
 import os
 import subprocess
 import threading
+import winreg
 from functools import lru_cache, partial
 
 import pystray
@@ -11,8 +13,9 @@ from PIL import Image, ImageDraw, ImageFont
 from pystray._util import win32  # private pystray API: keep pystray pinned in requirements.txt
 
 import startup
-from dialogs import MB_ICONERROR, ask_server, confirm, message, read_clipboard
-from query import (SERVERS_FILE, address, bold_digits, format_status, load_servers, parse_address,
+from dialogs import MB_ICONERROR, ask_favourites, ask_server, confirm, message, read_clipboard
+from maps import FAVOURITES_FILE, load_favourites, local_maps, save_favourites
+from query import (CONFIG_DIR, SERVERS_FILE, address, bold_digits, format_status, load_servers, parse_address,
                    preferred_address, query_all, save_servers, totals)
 
 REFRESH_SECONDS = 30
@@ -77,11 +80,39 @@ def make_app_icon(size):
     return img
 
 
+APP_ID = "CSS-ZE-Widget"
+NOTIFICATION_ICON_FILE = CONFIG_DIR / "notification-icon.png"
+
+
+def _register_app_id():
+    """Give notifications the widget's name and icon in their header. Without an app ID, Windows shows the
+    program ("Python" or "CSS-ZE-Widget.exe") with an icon it keeps from the first notification, which comes
+    out blank because the tray icon has been redrawn by then."""
+    try:
+        NOTIFICATION_ICON_FILE.parent.mkdir(parents=True, exist_ok=True)
+        make_app_icon(256).save(NOTIFICATION_ICON_FILE)  # every start, so a deleted file comes back
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, rf"Software\Classes\AppUserModelId\{APP_ID}") as key:
+            winreg.SetValueEx(key, "DisplayName", 0, winreg.REG_SZ, "CSS ZE Widget")
+            winreg.SetValueEx(key, "IconUri", 0, winreg.REG_SZ, str(NOTIFICATION_ICON_FILE))
+    except OSError:
+        return  # notifications still work, with the plain header
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_ID)
+
+
+NIN_BALLOONUSERCLICK = win32.WM_USER + 5  # Windows sends this when a notification from the icon is clicked
+
+
 class _Icon(pystray.Icon):
-    """Opens the menu on left click too; pystray only does that on right click."""
+    """Opens the menu on left click too; pystray only does that on right click.
+    A click on a notification joins toast_address, or opens the menu when it's None."""
+
+    toast_address = None
 
     def _on_notify(self, wparam, lparam):
-        if lparam == win32.WM_LBUTTONUP:
+        if lparam == NIN_BALLOONUSERCLICK and self.toast_address:
+            _connect(self.toast_address)()
+            return
+        if lparam in (win32.WM_LBUTTONUP, NIN_BALLOONUSERCLICK):
             lparam = win32.WM_RBUTTONUP
         super()._on_notify(wparam, lparam)
 
@@ -99,10 +130,10 @@ def _open_servers_file():
     subprocess.Popen(["notepad.exe", str(SERVERS_FILE)])
 
 
-def _mtime():
+def _mtime(path=SERVERS_FILE):
     try:
-        return SERVERS_FILE.stat().st_mtime_ns
-    except OSError:  # deleted; load_servers recreates it
+        return path.stat().st_mtime_ns
+    except OSError:  # missing; load_servers recreates servers.json, favourites.json is optional
         return None
 
 
@@ -117,6 +148,12 @@ class TrayApp:
         self._dialog_open = threading.Lock()  # one dialog at a time
         self._show_lock = threading.Lock()
         self._servers_mtime = _mtime()  # main.py just loaded the file
+        self.favourite_maps, self.notify = frozenset(), True  # loaded by the first refresh
+        self._favourites_mtime = -1  # no file has this, so the first refresh loads favourites.json
+        self._favourites_lock = threading.Lock()
+        self._last_maps = {}  # address -> map last seen there, to spot map changes
+        self._renotify = False  # set by "Refresh now": notify about favourites that are already on, too
+        _register_app_id()  # before the tray icon exists, so its notifications get the ID
         self.icon = _Icon(
             "css-ze-widget", make_icon(), "CSS ZE: checking servers…",
             menu=pystray.Menu(self._menu_items),
@@ -131,7 +168,7 @@ class TrayApp:
         else:
             preferred = preferred_address(self.servers)
             for s in sorted(self.statuses, key=lambda s: s["address"] != preferred):  # preferred first
-                text = format_status(s, bold=True)
+                text = format_status(s, bold=True, favourite=self._is_favourite(s))
                 yield pystray.MenuItem(f"★ {text}" if s["address"] == preferred else text,
                                        _connect(s["address"]), enabled=s["online"])
         yield pystray.Menu.SEPARATOR
@@ -140,10 +177,11 @@ class TrayApp:
         yield pystray.MenuItem("Add server from clipboard", self._dialog(self._add_from_clipboard))
         yield pystray.MenuItem("Remove server", pystray.Menu(self._remove_items), enabled=bool(self.servers))
         yield pystray.MenuItem("Preferred server", pystray.Menu(self._preferred_items), enabled=bool(self.servers))
+        yield pystray.MenuItem("Favourite maps", pystray.Menu(self._favourite_items))
         yield pystray.MenuItem("Open servers.json", _open_servers_file)
         yield pystray.Menu.SEPARATOR
         yield pystray.MenuItem("Start with Windows", self._toggle_startup, checked=lambda _item: startup.is_enabled())
-        yield pystray.MenuItem("Refresh now", self._wake.set)
+        yield pystray.MenuItem("Refresh now", self._refresh_now)
         yield pystray.MenuItem("Quit", self._quit)
 
     def _remove_items(self):
@@ -176,6 +214,43 @@ class TrayApp:
             return
         if self.statuses is not None:
             self._show(self.statuses)  # redraw the icon now instead of after the refresh
+
+    def _favourite_items(self):
+        yield pystray.MenuItem("Edit favourites…", self._dialog(self._edit_favourites))
+        yield pystray.MenuItem("Notify when one is played", self._toggle_notify, checked=lambda _item: self.notify)
+
+    def _toggle_notify(self):
+        try:
+            self._change_favourites(notify=not self.notify)
+        except ValueError as e:
+            self._dialog(partial(message, str(e), MB_ICONERROR))()
+
+    def _edit_favourites(self):
+        maps = local_maps()
+        if not maps:
+            message("Couldn't find the Counter-Strike: Source maps folder, so only your favourites "
+                    "and the maps the servers are playing now are listed.")
+        # The maps on the servers now too, so one you haven't downloaded yet can still be picked.
+        playing = {s["map"].lower() for s in self.statuses or [] if s["online"]}
+        ask_favourites(sorted(maps | playing | self.favourite_maps), self.favourite_maps,
+                       lambda added, removed: self._change_favourites(added, removed),
+                       icons=[make_app_icon(s) for s in (16, 32, 48)])
+
+    def _change_favourites(self, added=(), removed=(), notify=None):
+        """Apply changes to the favourites and save favourites.json. Raises ValueError if it can't be saved."""
+        with self._favourites_lock:
+            maps = (self.favourite_maps | set(added)) - set(removed)
+            notify = self.notify if notify is None else notify
+            try:
+                save_favourites(maps, notify)
+            except OSError as e:
+                raise ValueError(f"Could not save favourites.json:\n\n{e}") from None
+            self.favourite_maps, self.notify = maps, notify
+            self._favourites_mtime = _mtime(FAVOURITES_FILE)  # our own save, nothing to reload
+        self.icon.update_menu()  # the ♥ on the server lines
+
+    def _is_favourite(self, status):
+        return status["online"] and status["map"].lower() in self.favourite_maps
 
     def _label(self, server):
         """Name and address, using the name the server reports when servers.json has none."""
@@ -278,12 +353,62 @@ class TrayApp:
                 text = f"servers.json has an error, so the widget keeps using the previous list:\n\n{e}"
                 self._dialog(partial(message, text, MB_ICONERROR))()
 
+    def _reload_favourites_if_edited(self):
+        """Pick up changes made to favourites.json by hand."""
+        with self._favourites_lock:
+            mtime = _mtime(FAVOURITES_FILE)
+            if mtime == self._favourites_mtime:
+                return
+            self._favourites_mtime = mtime
+            try:
+                self.favourite_maps, self.notify = load_favourites()
+            except (OSError, ValueError) as e:
+                text = f"favourites.json has an error, so the widget keeps using the previous favourites:\n\n{e}"
+                self._dialog(partial(message, text, MB_ICONERROR))()
+
     def _refresh(self):
         self._reload_if_edited()
+        self._reload_favourites_if_edited()
         statuses = query_all(self.servers)
         # A server removed while the queries ran must not come back from these results.
         listed = {address(s) for s in self.servers}
-        self._show([s for s in statuses if s["address"] in listed])
+        statuses = [s for s in statuses if s["address"] in listed]
+        self._show(statuses)
+        self._notify_favourites(statuses)
+
+    def _refresh_now(self):
+        self._renotify = True
+        self._wake.set()
+
+    def _notify_favourites(self, statuses):
+        """Show a notification when a server switches to a favourite map. The first refresh counts as a
+        switch, so a favourite that's already on gets one too, and so does the refresh "Refresh now" starts."""
+        # Read and reset here, on the refresh thread. A click after this line leaves it set for the
+        # refresh its _wake.set() starts right after this one.
+        renotify, self._renotify = self._renotify, False
+        found = []
+        for s in statuses:
+            if not s["online"]:
+                continue  # keep its last map, so coming back on the same map stays quiet
+            map_name = s["map"].lower()
+            if (renotify or self._last_maps.get(s["address"]) != map_name) and map_name in self.favourite_maps:
+                found.append(s)
+            self._last_maps[s["address"]] = map_name
+        if not found or not self.notify:
+            return
+        preferred = preferred_address(self.servers)
+        found.sort(key=lambda s: s["address"] != preferred)
+        if len(found) == 1:
+            s = found[0]
+            title = f"♥ {s['map']}"
+            text = f"{s['name']} · {s['players']}/{s['max_players']} players\nClick to join."
+            self.icon.toast_address = s["address"]
+        else:
+            title = "♥ Favourite maps are on"
+            text = "\n".join(f"{s['map']} on {s['name']}" for s in found) + "\nClick to pick a server."
+            self.icon.toast_address = None  # a click opens the menu instead
+        # Windows' limits for the notification's title and text.
+        self.icon.notify(text[:255], title[:63])
 
     def _show(self, statuses):
         """Put statuses on the icon, tooltip and menu."""
